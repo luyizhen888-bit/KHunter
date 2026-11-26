@@ -1,0 +1,399 @@
+{
+  "audited_commit": "9b2e8f0b179c4c897fac899673bf9c0751b5507e",
+  "generated_at_utc": "2026-11-26T00:15:19Z",
+  "source_pins": {
+    "trading/backtest_engine.py": {
+      "stamp_tax_rate = 0.001": [
+        141
+      ],
+      "min_commission = 5": [
+        140
+      ],
+      "selection_date = self._get_previous_trading_day": [
+        763
+      ],
+      "base_stop_level = -6": [
+        3774
+      ],
+      "return 10.0": [
+        3591
+      ],
+      "if hold_days > 0:": [
+        3876
+      ],
+      "T+1规则：当天买入的股票不能当天卖出": [
+        3875
+      ]
+    },
+    "utils/stock_data_fetcher.py": {
+      "list_status='L'": [
+        407
+      ],
+      "fqkline/get?param=": [
+        748,
+        931
+      ]
+    },
+    "config/backtest_engine_config.yaml": {
+      "initial_capital: 500000": [
+        45
+      ],
+      "mode: open": [
+        240
+      ],
+      "buy: 0.003": [
+        259
+      ]
+    }
+  },
+  "synthetic_disclaimer": "Synthetic bars test engine rules. They are not historical returns.",
+  "counts": {
+    "pass": 9,
+    "fail": 15,
+    "not_verified": 0
+  },
+  "tests": [
+    {
+      "id": "stamp_tax_rate",
+      "status": "fail",
+      "summary": "卖出印花税按 0.1% 硬编码，不是 2023-08-28 起减半后的 0.05%。",
+      "evidence": {
+        "engine_rate": 0.001,
+        "statutory_rate": 0.0005,
+        "notional": 5000.0,
+        "engine_stamp_tax": 5.0,
+        "statutory_stamp_tax": 2.5,
+        "extra_tax": 2.5,
+        "buy_stamp_tax": 0,
+        "source": "trading/backtest_engine.py calculate_backtest_cost stamp_tax_rate=0.001"
+      }
+    },
+    {
+      "id": "min_commission_floor",
+      "status": "pass",
+      "summary": "100 股、成交额 5000 元时，佣金被抬到 5 元，而不是名义 0.015%。",
+      "evidence": {
+        "notional": 5000.0,
+        "nominal_commission": 0.75,
+        "buy_commission": 5,
+        "sell_commission": 5
+      }
+    },
+    {
+      "id": "transfer_fee_scope",
+      "status": "fail",
+      "summary": "过户费费率 0.001% 与 2022-04-29 后的标准一致，但只对 6 开头收取，深市漏计。",
+      "evidence": {
+        "shanghai_buy": 0.05,
+        "shanghai_sell": 0.05,
+        "shenzhen_buy": 0,
+        "shenzhen_sell": 0,
+        "statutory_one_side": 0.05
+      }
+    },
+    {
+      "id": "round_trip_5000_yuan",
+      "status": "fail",
+      "summary": "5000 元买卖各 100 股、价格不变时，引擎成本高于现行印花税口径。",
+      "evidence": {
+        "engine_round_trip_cost": 15.1,
+        "statutory_round_trip_cost_if_min_commission_5": 12.6,
+        "engine_net_pnl_if_flat": -15.1,
+        "note": "最低佣金 5 元是券商约定，不是交易所法规。这里只把印花税换成 0.05% 作对照。"
+      }
+    },
+    {
+      "id": "lot_size_100_shares",
+      "status": "pass",
+      "summary": "主板/创业板最小单位是 100 股；科创板是 200 股，100 股买不了。",
+      "evidence": {
+        "main_board_unit": 100,
+        "chinext_unit": 100,
+        "star_unit": 200,
+        "qty_5000_at_49_99": 100,
+        "qty_5000_at_50_01": 0,
+        "qty_star_5000_at_20": 250,
+        "qty_star_5000_at_30": 0
+      }
+    },
+    {
+      "id": "t1_same_day_unsellable",
+      "status": "pass",
+      "summary": "买入当日 hold_days=0，即使价格已跌破止损也不卖。",
+      "evidence": {
+        "sell_count": 0,
+        "held": 1
+      }
+    },
+    {
+      "id": "limit_down_open_still_fills",
+      "status": "fail",
+      "summary": "前收已触发止损后，次日一字跌停开盘仍按开盘价减滑点卖出，没有跌停可成交性检查。",
+      "evidence": {
+        "sold": true,
+        "sell_type": "trailing_stop",
+        "sell_price": 8.0757,
+        "one_word_open": 8.1,
+        "slipped": 8.0757,
+        "configured_stop_loss": -10,
+        "hardcoded_stop_price": 9.4,
+        "note": "config stop_loss=-10 本应放宽到 -10%，实际仍在 -6% 价位触发。"
+      }
+    },
+    {
+      "id": "configured_stop_loss_ignored",
+      "status": "fail",
+      "summary": "前收较买入价跌 5%。配置止损 -3% 时期望卖出，引擎固定用 -6%，所以不卖。",
+      "evidence": {
+        "sold": false,
+        "prev_close": 9.5,
+        "buy_price": 10.0,
+        "drop_pct": -5.0,
+        "configured_stop_loss": -3,
+        "hardcoded_stop_price": 9.4
+      }
+    },
+    {
+      "id": "gap_through_stop_uses_open",
+      "status": "pass",
+      "summary": "止损触发后成交在次日开盘（再减滑点），不是止损价，跳空被计入。",
+      "evidence": {
+        "sell_price": 8.4745,
+        "open_price": 8.5,
+        "stop_price": 9.4,
+        "expected_slipped_open": 8.4745
+      }
+    },
+    {
+      "id": "no_same_bar_low_stop",
+      "status": "pass",
+      "summary": "止损看前收，不看当日最低价。当日下影刺破止损价不会成交。",
+      "evidence": {
+        "sold": false,
+        "prev_close": 9.8,
+        "same_bar_low": 8.0,
+        "stop_price": 9.4
+      }
+    },
+    {
+      "id": "no_same_bar_high_take_profit",
+      "status": "pass",
+      "summary": "止盈用的是卖出价（当日开盘减滑点）算出来的收益率，不用当日最高价。",
+      "evidence": {
+        "sold": false,
+        "open_price": 10.1,
+        "same_bar_high": 11.5,
+        "take_profit_pct": 5
+      }
+    },
+    {
+      "id": "take_profit_uses_today_open",
+      "status": "fail",
+      "summary": "说明书写的是前一根 K 线计算。止盈实际用当日开盘价（减滑点）是否已经达到阈值。这不是用了收盘价的前视，但和“一律用前一根”不符。",
+      "evidence": {
+        "sold": true,
+        "sell_type": "take_profit",
+        "sell_price": 10.967,
+        "prev_close": 10.1,
+        "open_price": 11.0,
+        "marketing_claim": "calculations use the prior bar",
+        "observed": "take-profit threshold applied to slipped open"
+      }
+    },
+    {
+      "id": "sell_decision_ignores_min_commission",
+      "status": "fail",
+      "summary": "卖出决策用的佣金是成交额×0.015%，没有 5 元下限；落库收益率才用下限。阈值夹在两者中间时会卖出，但记账收益率低于阈值。",
+      "evidence": {
+        "open_price": 52.0,
+        "slipped_price": 51.844,
+        "threshold": 3.4231562437562535,
+        "decision_estimate_return_pct": 3.4652935064935204,
+        "recorded_return_pct": 3.3810189810189866,
+        "sold": true,
+        "sell_commission_recorded": 5,
+        "actual_return_if_min_commission_applied": 3.3810189810189866,
+        "default_take_profit_note": "默认止盈是 21% 或配置里的 60%。这条只在阈值贴着成本时改变是否成交。"
+      }
+    },
+    {
+      "id": "zero_volume_still_tradable",
+      "status": "fail",
+      "summary": "成交量为 0 但开盘价大于 0 时，停牌检查仍视为可交易。",
+      "evidence": {
+        "has_data": true,
+        "volume": 0,
+        "open": 10
+      }
+    },
+    {
+      "id": "missing_bar_not_tradable",
+      "status": "pass",
+      "summary": "缓存里没有当日 K 线时，停牌/退市检查返回不可交易。",
+      "evidence": {
+        "has_data": false
+      }
+    },
+    {
+      "id": "missing_bar_price_falls_back",
+      "status": "fail",
+      "summary": "主循环会先做停牌检查，所以这条不一定成交。但取价函数在缺 bar 时返回更早的收盘价，开盘价模式会把它当成可成交开盘价。",
+      "evidence": {
+        "fallback_open": 10.0,
+        "resolve_filled": true,
+        "resolve_price": 10.0,
+        "last_real_close": 10.0
+      }
+    },
+    {
+      "id": "price_exception_returns_ten",
+      "status": "fail",
+      "summary": "取价抛异常时返回 10.0，而不是拒绝成交。",
+      "evidence": {
+        "returned": 10.0
+      }
+    },
+    {
+      "id": "delist_or_long_halt_never_exits",
+      "status": "fail",
+      "summary": "行情中断后持仓留着，取价退回最后一根收盘价。退市损失不会按无法卖出处理。",
+      "evidence": {
+        "sold": false,
+        "held": 1,
+        "mark_price": 7.5,
+        "last_close": 7.5
+      }
+    },
+    {
+      "id": "one_word_limit_up_buy_fills",
+      "status": "fail",
+      "summary": "开盘价模式对一字涨停无条件成交。生产路径还会再乘买入滑点。没有板块涨跌停价。",
+      "evidence": {
+        "filled": true,
+        "raw_open": 11.0,
+        "after_default_slippage": 11.033,
+        "prev_close": 10.0,
+        "limit_up_price": 11.0
+      }
+    },
+    {
+      "id": "no_board_limit_check",
+      "status": "fail",
+      "summary": "开盘涨 15% 仍按开盘价成交。主板 10% 涨停下这根 K 线不合法，引擎不区分板块、ST 或北交所。",
+      "evidence": {
+        "filled": true,
+        "price": 11.5,
+        "prev_close": 10.0,
+        "open_gap": 0.15
+      }
+    },
+    {
+      "id": "ma_limit_same_bar_low_fill",
+      "status": "fail",
+      "summary": "ma_limit 不是默认模式。当日只要最低价碰到委托价，就按 min(开盘, 委托价) 成交，不看成交量，下影线即视为买到。",
+      "evidence": {
+        "filled": true,
+        "fill_price": 10.049999999999999,
+        "order_price": 10.049999999999999,
+        "open_price": 10.8,
+        "low_price": 9.9,
+        "mode": "ma_limit",
+        "default_yaml_mode": "open"
+      }
+    },
+    {
+      "id": "turtle_signal_uses_prior_bar",
+      "status": "pass",
+      "summary": "短线海龟在 use_prev_day_signal=True 时用倒数第二根 K 线。只有 T 日突破不会买；T-1 突破、T 日不突破仍会买。输入倒序也会先转正序。",
+      "evidence": {
+        "buy_if_only_T_breaks": false,
+        "buy_if_T_minus_1_breaks": true,
+        "buy_if_engine_passes_newest_first": true,
+        "message_T_minus_1": "T-1日突破上线 10.20，买入信号"
+      }
+    },
+    {
+      "id": "support_strategy_bar_order",
+      "status": "fail",
+      "summary": "回测把 K 线倒序传给择时。支撑位策略用 iloc[-2] 之前没有转正序，倒序时读到的是很早的一根，不是 T-1。",
+      "evidence": {
+        "ascending_is_buy": false,
+        "newest_first_is_buy": false,
+        "date_strategy_reads_if_newest_first": "2024-01-03",
+        "true_T_minus_1": "2024-01-30"
+      }
+    },
+    {
+      "id": "selection_date_is_previous_session",
+      "status": "pass",
+      "summary": "回测循环里的选股日是执行日的前一个交易日。这只证明日期偏移，不证明每条策略都没用到执行日收盘价。",
+      "evidence": {
+        "execution_day": "2024-01-09",
+        "selection_day": "2024-01-08"
+      }
+    }
+  ],
+  "public_quote_probe": {
+    "status": "pass",
+    "source": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+    "symbol": "601138",
+    "note": "Public quote comparison only. Not a strategy backtest and not an entry price.",
+    "early_sample": [
+      {
+        "date": "2020-01-02",
+        "raw_close": 18.38,
+        "qfq_close": 14.682,
+        "raw_over_qfq": 1.251873,
+        "cash_100_shares_raw": 1838.0,
+        "cash_100_shares_qfq": 1468.2
+      },
+      {
+        "date": "2020-01-03",
+        "raw_close": 18.22,
+        "qfq_close": 14.522,
+        "raw_over_qfq": 1.254648,
+        "cash_100_shares_raw": 1822.0,
+        "cash_100_shares_qfq": 1452.2
+      },
+      {
+        "date": "2020-01-06",
+        "raw_close": 17.9,
+        "qfq_close": 14.202,
+        "raw_over_qfq": 1.260386,
+        "cash_100_shares_raw": 1790.0,
+        "cash_100_shares_qfq": 1420.2
+      }
+    ],
+    "recent_sample": [
+      {
+        "date": "2026-11-23",
+        "raw_close": 38.29,
+        "qfq_close": 38.29,
+        "raw_over_qfq": 1.0,
+        "cash_100_shares_raw": 3829.0,
+        "cash_100_shares_qfq": 3829.0
+      },
+      {
+        "date": "2026-11-24",
+        "raw_close": 40.96,
+        "qfq_close": 40.96,
+        "raw_over_qfq": 1.0,
+        "cash_100_shares_raw": 4096.0,
+        "cash_100_shares_qfq": 4096.0
+      },
+      {
+        "date": "2026-11-25",
+        "raw_close": 39.61,
+        "qfq_close": 39.61,
+        "raw_over_qfq": 1.0,
+        "cash_100_shares_raw": 3961.0,
+        "cash_100_shares_qfq": 3961.0
+      }
+    ],
+    "data_cutoff": "2026-11-25"
+  },
+  "stage2_strategy_backtest": {
+    "status": "not_run",
+    "reason": "Critical fill and data-model failures. No historical return is reported."
+  }
+}
